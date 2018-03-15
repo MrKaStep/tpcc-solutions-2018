@@ -15,61 +15,38 @@ class CyclicBarrier {
   explicit CyclicBarrier(const size_t num_threads)
       : num_threads_(num_threads),
         mutex_(),
-        turniquet_cond_var_(),
-        enqueued_threads_(0),
-        current_state_(kWaiting) {
+        cond_var_(),
+        enqueued_threads_{0, 0},
+        current_pass_(0) {
   }
 
   void PassThrough() {
     std::unique_lock<std::mutex> lock(mutex_);
-    AwaitEnqueue(lock);
-    ++enqueued_threads_;
-    if (enqueued_threads_ == num_threads_) {
-      current_state_ = kPassing;
-      --enqueued_threads_;
-      turniquet_cond_var_.notify_all();
-      AwaitPassed(lock);
-      current_state_ = kWaiting;
-      turniquet_cond_var_.notify_all();
+
+    ++enqueued_threads_[current_pass_];
+
+    if (enqueued_threads_[current_pass_] == num_threads_) {
+      enqueued_threads_[current_pass_] = 0;
+      current_pass_ ^= 1;
+      cond_var_.notify_all();
     } else {
-      AwaitPassing(lock);
-      --enqueued_threads_;
-      if (enqueued_threads_ == 0) {
-        controller_cond_var_.notify_one();
-      }
+      AwaitPass(lock, current_pass_);
     }
   }
 
  private:
-  enum State {
-    kWaiting,
-    kPassing
-  };
 
-  void AwaitEnqueue(std::unique_lock<std::mutex>& lock) {
-    turniquet_cond_var_.wait(lock, [this]() {
-      return this->current_state_ == kWaiting;
-    });
-  }
-
-  void AwaitPassed(std::unique_lock<std::mutex>& lock) {
-    controller_cond_var_.wait(lock, [this]() {
-      return this->enqueued_threads_ == 0;
-    });
-  }
-
-  void AwaitPassing(std::unique_lock<std::mutex>& lock) {
-    turniquet_cond_var_.wait(lock, [this]() {
-      return this->current_state_ == kPassing;
+  void AwaitPass(std::unique_lock<std::mutex> &lock, size_t current_pass) {
+    cond_var_.wait(lock, [this, i = current_pass]() {
+      return this->current_pass_ != i;
     });
   }
 
   size_t num_threads_;
   std::mutex mutex_;
-  tpcc::condition_variable turniquet_cond_var_;
-  tpcc::condition_variable controller_cond_var_;
-  size_t enqueued_threads_;
-  State current_state_;
+  tpcc::condition_variable cond_var_;
+  size_t enqueued_threads_[2];
+  size_t current_pass_;
 };
 
 } // namespace solutions

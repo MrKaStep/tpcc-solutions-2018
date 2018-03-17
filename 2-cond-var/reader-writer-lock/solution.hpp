@@ -5,8 +5,6 @@
 
 #include <mutex>
 
-#include <cassert>
-
 namespace tpcc {
 namespace solutions {
 
@@ -31,7 +29,6 @@ class ReaderWriterLock {
     readers_allowed_.wait(lock, [this]() {
       return (!this->writer_active_) && this->next_ != kWriter;
     });
-    assert(!writer_active_);
     --readers_waiting_;
     ++readers_sections_;
     ++readers_active_;
@@ -53,7 +50,6 @@ class ReaderWriterLock {
     writers_allowed_.wait(lock, [this]() {
       return !this->writer_active_ && this->readers_active_ == 0 && this->next_ != kReader;
     });
-    assert(readers_active_ == 0);
     --writers_waiting_;
     ++writers_sections_;
     writer_active_ = true;

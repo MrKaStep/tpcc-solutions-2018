@@ -50,7 +50,8 @@ class ReaderWriterLock {
   void lock() {
     std::unique_lock<std::mutex> lock(mutex_);
     ++writers_waiting_;
-    writers_allowed_.wait(lock, [this]() { return !writer_active_ && readers_active_ == 0; });
+    writers_allowed_.wait(
+        lock, [this]() { return !writer_active_ && readers_active_ == 0; });
     --writers_waiting_;
     writer_active_ = true;
   }
@@ -163,7 +164,7 @@ class StripedHashSet {
     return hash_value % concurrency_level_;
   }
 
-  template<class Locker>
+  template <class Locker>
   Locker LockStripeByIndex(const size_t stripe_index) const {
     return Locker(stripe_locks_[stripe_index]);
   }
@@ -196,13 +197,13 @@ class StripedHashSet {
     locks.reserve(concurrency_level_);
     locks.emplace_back(LockStripeByIndex<WriterLocker>(0));
 
-//    std::cerr << "Checking if need expand: " << GetBucketCount();
+    //    std::cerr << "Checking if need expand: " << GetBucketCount();
 
     if (buckets_.size() != expected_bucket_count) {
       return;
     }
 
-//    std::cerr << "Trying to expand: " << GetBucketCount();
+    //    std::cerr << "Trying to expand: " << GetBucketCount();
 
     for (size_t i = 1; i < concurrency_level_; ++i) {
       locks.emplace_back(LockStripeByIndex<WriterLocker>(i));

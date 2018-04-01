@@ -13,6 +13,8 @@
 #include <vector>
 #include <utility>
 
+#include <iostream>
+
 namespace tpcc {
 namespace solutions {
 
@@ -21,28 +23,64 @@ namespace solutions {
 // implement writer-priority rwlock
 class ReaderWriterLock {
  public:
-  // reader section / shared ownership
+  ReaderWriterLock()
+      : writer_active_(false),
+        writers_waiting_(0),
+        readers_active_(0),
+        readers_waiting_(0) {
+  }
 
   void lock_shared() {
-    // to be implemented
+    std::unique_lock<std::mutex> lock(mutex_);
+    ++readers_waiting_;
+    readers_allowed_.wait(
+        lock, [this]() { return !writer_active_ && writers_waiting_ == 0; });
+    ++readers_active_;
+    --readers_waiting_;
   }
 
   void unlock_shared() {
-    // to be implemented
+    std::unique_lock<std::mutex> lock(mutex_);
+    --readers_active_;
+    Notify();
   }
 
   // writer section / exclusive ownership
 
   void lock() {
-    // to be implemented
+    std::unique_lock<std::mutex> lock(mutex_);
+    ++writers_waiting_;
+    writers_allowed_.wait(lock, [this]() { return !writer_active_ && readers_active_ == 0; });
+    --writers_waiting_;
+    writer_active_ = true;
   }
 
   void unlock() {
-    // to be implemented
+    std::unique_lock<std::mutex> lock(mutex_);
+    writer_active_ = false;
+    Notify();
   }
 
  private:
-  // use mutex / condition_variable from tpcc namespace
+  void Notify() {
+    if (writers_waiting_ > 0) {
+      if (readers_active_ == 0) {
+        writers_allowed_.notify_one();
+      }
+    } else if (readers_waiting_ > 0) {
+      readers_allowed_.notify_all();
+    }
+  }
+
+  std::mutex mutex_;
+  tpcc::condition_variable readers_allowed_;
+  tpcc::condition_variable writers_allowed_;
+
+  bool writer_active_;
+  size_t writers_waiting_;
+
+  size_t readers_active_;
+  size_t readers_waiting_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,77 +102,135 @@ class StripedHashSet {
                           const double max_load_factor = 0.8)
       : concurrency_level_(concurrency_level),
         growth_factor_(growth_factor),
-        max_load_factor_(max_load_factor) {
+        max_load_factor_(max_load_factor),
+        size_(0),
+        stripe_locks_(concurrency_level_),
+        buckets_(concurrency_level_) {
   }
 
   bool Insert(T element) {
-    UNUSED(element);
-    return false;  // not implemented
+    size_t hash_value = hash_function_(element);
+    auto write_lock = LockStripe<WriterLocker>(hash_value);
+    auto& bucket = GetBucket(hash_value);
+    auto it = std::find(bucket.begin(), bucket.end(), element);
+    if (it != bucket.end()) {
+      return false;
+    }
+    bucket.emplace_front(element);
+    size_.fetch_add(1);
+
+    if (MaxLoadFactorExceeded()) {
+      size_t expected_bucket_count = buckets_.size();
+      write_lock.unlock();
+      write_lock.release();
+      TryExpandTable(expected_bucket_count);
+    }
+
+    return true;
   }
 
   bool Remove(const T& element) {
-    UNUSED(element);
-    return false;  // not implemented
+    size_t hash_value = hash_function_(element);
+    auto write_lock = LockStripe<WriterLocker>(hash_value);
+    auto& bucket = GetBucket(hash_value);
+    auto it = std::find(bucket.begin(), bucket.end(), element);
+    if (it == bucket.end()) {
+      return false;
+    }
+    bucket.remove(element);
+    size_.fetch_sub(1);
+    return true;
   }
 
   bool Contains(const T& element) const {
-    UNUSED(element);
-    return false;  // not implemented
+    size_t hash_value = hash_function_(element);
+    auto read_lock = LockStripe<ReaderLocker>(hash_value);
+    auto& bucket = GetBucket(hash_value);
+    return std::find(bucket.begin(), bucket.end(), element) != bucket.end();
   }
 
   size_t GetSize() const {
-    return 0;  // to be implemented
+    return size_.load();
   }
 
   size_t GetBucketCount() const {
-    // for testing purposes
-    // do not optimize, just acquire arbitrary lock and read bucket count
-    return 0;  // to be implemented
+    auto stripe_lock = LockStripe<ReaderLocker>(0);
+    return buckets_.size();
   }
 
  private:
   size_t GetStripeIndex(const size_t hash_value) const {
-    UNUSED(hash_value);
-    return 0;  // to be implemented
+    return hash_value % concurrency_level_;
+  }
+
+  template<class Locker>
+  Locker LockStripeByIndex(const size_t stripe_index) const {
+    return Locker(stripe_locks_[stripe_index]);
   }
 
   // use: auto stripe_lock = LockStripe<ReaderLocker>(hash_value);
   template <class Locker>
   Locker LockStripe(const size_t hash_value) const {
-    UNUSED(stripe_index);
-    // to be implemented
+    return LockStripeByIndex<Locker>(GetStripeIndex(hash_value));
   }
 
   size_t GetBucketIndex(const size_t hash_value) const {
-    UNUSED(hash_value);
-    return 0;  // to be implemented
+    return hash_value % buckets_.size();
   }
 
   Bucket& GetBucket(const size_t hash_value) {
-    UNUSED(hash_value);
-    // to be implemented
+    return buckets_[GetBucketIndex(hash_value)];
   }
 
   const Bucket& GetBucket(const size_t hash_value) const {
-    UNUSED(hash_value);
-    // to be implemented
+    return buckets_[GetBucketIndex(hash_value)];
   }
 
   bool MaxLoadFactorExceeded() const {
-    return false;  // to be implemented
+    return static_cast<double>(size_.load()) >
+           static_cast<double>(buckets_.size()) * max_load_factor_;
   }
 
   void TryExpandTable(const size_t expected_bucket_count) {
-    UNUSED(expected_bucket_count);
-    // to be implemented
+    std::vector<WriterLocker> locks;
+    locks.reserve(concurrency_level_);
+    locks.emplace_back(LockStripeByIndex<WriterLocker>(0));
+
+//    std::cerr << "Checking if need expand: " << GetBucketCount();
+
+    if (buckets_.size() != expected_bucket_count) {
+      return;
+    }
+
+//    std::cerr << "Trying to expand: " << GetBucketCount();
+
+    for (size_t i = 1; i < concurrency_level_; ++i) {
+      locks.emplace_back(LockStripeByIndex<WriterLocker>(i));
+    }
+
+    size_t new_buckets_count = buckets_.size() * growth_factor_;
+    Buckets old_buckets(new_buckets_count);
+    std::swap(buckets_, old_buckets);
+
+    for (auto& bucket : old_buckets) {
+      for (T& element : bucket) {
+        size_t hash_value = hash_function_(element);
+        GetBucket(hash_value).emplace_front(std::move(element));
+      }
+    }
   }
 
  private:
-  size_t concurrency_level_;
-  size_t growth_factor_;
-  double max_load_factor_;
+  const size_t concurrency_level_;
+  const size_t growth_factor_;
+  const double max_load_factor_;
 
-  // to be continued
+  std::atomic<size_t> size_;
+
+  mutable std::vector<RWLock> stripe_locks_;
+  Buckets buckets_;
+
+  HashFunction hash_function_;
 };
 
 }  // namespace solutions

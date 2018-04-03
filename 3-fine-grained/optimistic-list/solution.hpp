@@ -123,14 +123,14 @@ class OptimisticLinkedSet {
   }
 
   bool Contains(const T& key) const {
-//    for (;;) {
-      auto edge = Locate(key);
-//      auto pred_lock = edge.pred_->Lock();
-//      auto curr_lock = edge.curr_->Lock();
-//      if (!Validate(edge))
-//        continue;
-      return edge.curr_->key_ == key;
-//    }
+    //    for (;;) {
+    auto edge = Locate(key);
+    //      auto pred_lock = edge.pred_->Lock();
+    //      auto curr_lock = edge.curr_->Lock();
+    //      if (!Validate(edge))
+    //        continue;
+    return edge.curr_->key_ == key;
+    //    }
   }
 
   size_t GetSize() const {

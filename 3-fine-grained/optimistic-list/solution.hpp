@@ -14,15 +14,18 @@ namespace solutions {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// implement Test-and-TAS spinlock
+// implement Test-and-TAS (!) spinlock
 class SpinLock {
  public:
   void Lock() {
-    // to be implemented
+    Backoff backoff;
+    while (locked_.load() || locked_.exchange(true)) {
+      backoff();
+    }
   }
 
   void Unlock() {
-    // to be implemented
+    locked_.store(false);
   }
 
   // adapters for BasicLockable concept
@@ -36,7 +39,7 @@ class SpinLock {
   }
 
  private:
-  // use tpcc::atomics
+  tpcc::atomic<bool> locked_{false};
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,12 +63,11 @@ class OptimisticLinkedSet {
  private:
   struct Node {
     T key_;
-    Node* next_;
+    tpcc::atomic<Node*> next_;
     SpinLock spinlock_;
     bool marked_{false};
 
-    Node(const T& key, Node* next = nullptr)
-        : key_(key), next_(next) {
+    Node(const T& key, Node* next = nullptr) : key_(key), next_(next) {
     }
 
     // use: auto node_lock = node->Lock();
@@ -78,8 +80,7 @@ class OptimisticLinkedSet {
     Node* pred_;
     Node* curr_;
 
-    EdgeCandidate(Node* pred, Node* curr)
-        : pred_(pred), curr_(curr) {
+    EdgeCandidate(Node* pred, Node* curr) : pred_(pred), curr_(curr) {
     }
   };
 
@@ -90,22 +91,50 @@ class OptimisticLinkedSet {
   }
 
   bool Insert(T key) {
-    UNUSED(key);
-    return false;  // to be implemented
+    for (;;) {
+      auto edge = Locate(key);
+      auto pred_lock = edge.pred_->Lock();
+      auto curr_lock = edge.curr_->Lock();
+      if (!Validate(edge))
+        continue;
+      if (edge.curr_->key_ == key)
+        return false;
+      Node* new_node = allocator_.New<Node>(key, edge.curr_);
+      edge.pred_->next_.store(new_node);
+      size_.fetch_add(1);
+      return true;
+    }
   }
 
   bool Remove(const T& key) {
-    UNUSED(key);
-    return false;  // to be implemented
+    for (;;) {
+      auto edge = Locate(key);
+      auto pred_lock = edge.pred_->Lock();
+      auto curr_lock = edge.curr_->Lock();
+      if (!Validate(edge))
+        continue;
+      if (edge.curr_->key_ != key)
+        return false;
+      edge.curr_->marked_ = true;
+      edge.pred_->next_.store(edge.curr_->next_.load());
+      size_.fetch_sub(1);
+      return true;
+    }
   }
 
   bool Contains(const T& key) const {
-    UNUSED(key);
-    return false;  // to be implemented
+//    for (;;) {
+      auto edge = Locate(key);
+//      auto pred_lock = edge.pred_->Lock();
+//      auto curr_lock = edge.curr_->Lock();
+//      if (!Validate(edge))
+//        continue;
+      return edge.curr_->key_ == key;
+//    }
   }
 
   size_t GetSize() const {
-    return 0;  // to be implemented
+    return size_.load();
   }
 
  private:
@@ -116,18 +145,24 @@ class OptimisticLinkedSet {
   }
 
   EdgeCandidate Locate(const T& key) const {
-    UNUSED(key);
-    return {nullptr, nullptr};  // to be implemented
+    Node* pred = head_;
+    Node* curr = head_->next_;
+    while (curr->key_ < key) {
+      pred = curr;
+      curr = curr->next_;
+    }
+    return {pred, curr};
   }
 
   bool Validate(const EdgeCandidate& edge) const {
-    UNUSED(edge);
-    return false;  // to be implemented
+    return !edge.pred_->marked_ && !edge.curr_->marked_ &&
+           edge.pred_->next_ == edge.curr_;
   }
 
  private:
   BumpPointerAllocator& allocator_;
   Node* head_{nullptr};
+  tpcc::atomic<size_t> size_{0};
 };
 
 }  // namespace solutions

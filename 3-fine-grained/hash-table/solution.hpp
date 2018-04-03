@@ -13,8 +13,6 @@
 #include <vector>
 #include <utility>
 
-#include <iostream>
-
 namespace tpcc {
 namespace solutions {
 

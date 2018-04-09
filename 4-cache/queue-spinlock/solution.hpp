@@ -42,7 +42,8 @@ class QueueSpinLock {
        */
 
       LockGuard* expected = this;
-      if (spinlock_.wait_queue_tail_.compare_exchange_strong(expected, nullptr)) {
+      if (spinlock_.wait_queue_tail_.compare_exchange_strong(expected,
+                                                             nullptr)) {
         return;
       }
 

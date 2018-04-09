@@ -2,6 +2,7 @@
 
 #include <tpcc/stdlike/atomic.hpp>
 #include <tpcc/concurrency/backoff.hpp>
+#include "../../../tpcc-course-2018/tpcclib/include/tpcc/backward/backoff.hpp"
 
 namespace tpcc {
 namespace solutions {
@@ -23,7 +24,16 @@ class QueueSpinLock {
       // add self to spinlock queue and wait for ownership
 
       LockGuard* prev_tail = spinlock_.wait_queue_tail_.exchange(this);
-      // to be continued
+      if (!prev_tail) {
+        return;
+      }
+
+      prev_tail->next_.store(this);
+
+      Backoff backoff{};
+      while (!is_owner_.load()) {
+        backoff();
+      }
     }
 
     void ReleaseLock() {
@@ -31,7 +41,16 @@ class QueueSpinLock {
        * or reset tail pointer if there are no other contenders
        */
 
-      // not implemented
+      LockGuard* expected = this;
+      if (spinlock_.wait_queue_tail_.compare_exchange_strong(expected, nullptr)) {
+        return;
+      }
+
+      Backoff backoff{};
+      while (!next_.load()) {
+        backoff();
+      }
+      next_.load()->is_owner_.store(true);
     }
 
    private:

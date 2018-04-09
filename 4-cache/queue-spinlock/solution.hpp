@@ -2,7 +2,6 @@
 
 #include <tpcc/stdlike/atomic.hpp>
 #include <tpcc/concurrency/backoff.hpp>
-#include "../../../tpcc-course-2018/tpcclib/include/tpcc/backward/backoff.hpp"
 
 namespace tpcc {
 namespace solutions {

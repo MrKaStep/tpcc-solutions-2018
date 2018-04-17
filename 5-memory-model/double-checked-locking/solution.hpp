@@ -17,13 +17,13 @@ class LazyValue {
 
   T& Get() {
     // double checked locking pattern
-    T* curr_ptr = ptr_to_value_.load(/* memory order? */);
+    T* curr_ptr = ptr_to_value_.load(std::memory_order_acquire);
     if (curr_ptr == nullptr) {
       std::lock_guard<std::mutex> guard(mutex_);
-      curr_ptr = ptr_to_value_.load(/* memory order? */);
+      curr_ptr = ptr_to_value_.load(std::memory_order_relaxed);
       if (curr_ptr == nullptr) {
         curr_ptr = create_();
-        ptr_to_value_.store(curr_ptr /* memory order? */);
+        ptr_to_value_.store(curr_ptr, std::memory_order_release);
       }
     }
     return *curr_ptr;

@@ -254,9 +254,7 @@ class CuckooHashSet {
       try {
         TwoBuckets buckets;
         LockSet bucket_locks;
-        //        LOG_SIMPLE("Insert Lock 1");
         LockTwoBuckets(hash, buckets, bucket_locks);
-        //        LOG_SIMPLE("Insert Locked 1");
 
         InterruptIfTableExpanded();
 
@@ -285,9 +283,7 @@ class CuckooHashSet {
 
         bucket_locks.Unlock();
         EvictElement(bucket_index);
-        //        LOG_SIMPLE("Insert Lock 2");
         LockTwoBuckets(hash, buckets, bucket_locks);
-        //        LOG_SIMPLE("Insert Locked 2");
 
         InterruptIfTableExpanded();
 
@@ -323,9 +319,7 @@ class CuckooHashSet {
       try {
         TwoBuckets buckets;
         LockSet bucket_locks;
-        //    LOG_SIMPLE("Remove Lock");
         LockTwoBuckets(hash, buckets, bucket_locks);
-        //    LOG_SIMPLE("Remove Locked");
         InterruptIfTableExpanded();
 
         size_t index;
@@ -356,9 +350,7 @@ class CuckooHashSet {
       try {
         TwoBuckets buckets;
         LockSet bucket_locks;
-        //    LOG_SIMPLE("Contains Lock");
         LockTwoBuckets(hash, buckets, bucket_locks);
-        //    LOG_SIMPLE("Contains Locked");
 
         InterruptIfTableExpanded();
 
@@ -374,7 +366,7 @@ class CuckooHashSet {
   }
 
   size_t GetSize() const {
-    return size_.load();  // to be implemented
+    return size_.load();
   }
 
   double GetLoadFactor() const {
@@ -389,7 +381,7 @@ class CuckooHashSet {
   }
 
   static size_t GetInitialBucketCount(const size_t concurrency_level) {
-    return std::max(concurrency_level << 1, 4ul);  // or something better
+    return std::max(concurrency_level << 1, 4ul);
   }
 
   static size_t HashToBucket(const size_t hash_value,
@@ -462,10 +454,8 @@ class CuckooHashSet {
   bool TryMoveHoleBackward(const CuckooPath& path) {
     for (auto it = path.rbegin(); std::next(it) != path.rend(); ++it) {
       auto next_it = std::next(it);
-      //      LOG_SIMPLE("Move Lock");
       auto lock_set = lock_manager_.Lock(GetLockIndex(it->bucket_),
                                          GetLockIndex(next_it->bucket_));
-      //      LOG_SIMPLE("Move Locked");
       InterruptIfTableExpanded();
 
       auto& current_slot = buckets_[it->bucket_][it->slot_];
@@ -483,14 +473,12 @@ class CuckooHashSet {
       next_slot.hash_.Alternate();
       std::swap(current_slot, next_slot);
     }
-    return true;  // to be implemented
+    return true;
   }
 
   bool TryFindCuckooPathWithRandomWalk(size_t start_bucket, CuckooPath& path) {
     for (size_t i = 0; i < kMaxPathLength; ++i) {
-      //      LOG_SIMPLE("FindPath Lock");
       auto lock_set = lock_manager_.Lock(GetLockIndex(start_bucket));
-      //      LOG_SIMPLE("FindPath Locked");
 
       InterruptIfTableExpanded();
 
@@ -525,31 +513,22 @@ class CuckooHashSet {
 
   void EvictElement(size_t start_bucket) {
     for (size_t i = 0; i < kEvictIterations; ++i) {
-      //      LOG_SIMPLE("Evict 1");
       auto path = FindCuckooPath(start_bucket);
-      //      LOG_SIMPLE("Evict 2");
       if (TryMoveHoleBackward(path)) {
-        //        LOG_SIMPLE("Evict 3");
         return;
       }
     }
-
-    //    LOG_SIMPLE("Evict 4");
 
     throw TableOvercrowded{};
   }
 
   void ExpandTable() {
-    //    LOG_SIMPLE("Expand Lock 1");
     auto initial_lock = lock_manager_.Lock(0);
-    //    LOG_SIMPLE("Expand Locked 1");
 
     if (expected_bucket_count_ != buckets_.size())
       return;
 
-    //    LOG_SIMPLE("Expand Lock 2");
     auto lock_set = lock_manager_.LockAllFrom(1);
-    //    LOG_SIMPLE("Expand Locked 2");
 
     bucket_count_ = bucket_count_.load() * 2;
     expected_bucket_count_ = bucket_count_;

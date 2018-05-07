@@ -69,6 +69,7 @@ class LockFreeStack {
     if (!node) {
       return new Node(std::move(item));
     }
+    std::swap(node->item_, item);
     return node;
   }
 

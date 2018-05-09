@@ -38,11 +38,11 @@ class LockFreeQueue {
   }
 
   void Enqueue(T item) {
-    tpcc::Defer defer([this]() {--active_threads_; });
+    tpcc::Defer defer([this]() { --active_threads_; });
     StartMethod();
     Node* new_node = new Node(item);
     Node* curr_tail;
-    while(true) {
+    while (true) {
       curr_tail = tail_;
       if (!curr_tail->next_) {
         Node* expected = nullptr;
@@ -58,9 +58,9 @@ class LockFreeQueue {
   }
 
   bool Dequeue(T& item) {
-    tpcc::Defer defer([this]() {--active_threads_; });
+    tpcc::Defer defer([this]() { --active_threads_; });
     StartMethod();
-    while(true) {
+    while (true) {
       Node* curr_head = head_;
       Node* curr_tail = tail_;
 
@@ -77,7 +77,6 @@ class LockFreeQueue {
         }
       }
     }
-
   }
 
  private:

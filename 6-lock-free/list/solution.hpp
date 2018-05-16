@@ -63,12 +63,13 @@ class LockFreeLinkedSet {
   }
 
   bool Insert(T key) {
+    Node* node = allocator_.New<Node>(key);
     for (;;) {
       auto edge = Locate(key);
       if (edge.curr_->key_ == key) {
         return false;
       }
-      Node* node = allocator_.New<Node>(key, edge.curr_);
+      node->next_.Store(edge.curr_);
       if (edge.pred_->next_.CompareAndSet({edge.curr_, false}, {node, false})) {
         ++size_;
         return true;

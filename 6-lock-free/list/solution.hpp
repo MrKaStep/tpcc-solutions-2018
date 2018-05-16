@@ -114,7 +114,7 @@ class LockFreeLinkedSet {
     for (;;) {
       Node* pred = head_;
       Node* curr = head_->next_.LoadPointer();
-      while (true) {
+      for (;;) {
         while (curr->IsMarked()) {
           HelpDeleting(pred, curr);
           curr = curr->next_.LoadPointer();

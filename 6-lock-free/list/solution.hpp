@@ -41,6 +41,11 @@ class LockFreeLinkedSet {
     bool IsMarked() const {
       return next_.IsMarked();
     }
+
+    bool TryMark() {
+      Node* ptr = next_.LoadPointer();
+      return next_.TryMark(ptr);
+    }
   };
 
   struct EdgeCandidate {
@@ -58,22 +63,43 @@ class LockFreeLinkedSet {
   }
 
   bool Insert(T key) {
-    UNUSED(key);
-    return false;  // to be implemented
+    for (;;) {
+      auto edge = Locate(key);
+      if (edge.curr_->key_ == key) {
+        return false;
+      }
+      Node* node = allocator_.New<Node>(key, edge.curr_);
+      if (edge.pred_->next_.CompareAndSet({edge.curr_, false}, {node, false})) {
+        ++size_;
+        return true;
+      }
+    }
   }
 
   bool Remove(const T& key) {
-    UNUSED(key);
-    return false;  // to be implemented
+    for (;;) {
+      auto edge = Locate(key);
+      if (edge.curr_->key_ != key) {
+        return false;
+      }
+      if (!edge.curr_->TryMark()) {
+        continue;
+      }
+      edge.pred_->next_.CompareAndSet({edge.curr_, false},
+                                      {edge.curr_->next_.LoadPointer(), false});
+      --size_;
+      return true;
+    }
   }
 
   bool Contains(const T& key) const {
-    UNUSED(key);
-    return false;  // to be implemented
+    auto edge = Locate(key);
+    // if node is reached -- Contains intersects with possible remove
+    return edge.curr_->key_ == key;
   }
 
   size_t GetSize() const {
-    return 0;  // to be implemented
+    return size_;
   }
 
  private:
@@ -84,13 +110,35 @@ class LockFreeLinkedSet {
   }
 
   EdgeCandidate Locate(const T& key) const {
-    UNUSED(key);
-    return {nullptr, nullptr};  // to be implemented
+    for (;;) {
+      Node* pred = head_;
+      Node* curr = head_->next_.LoadPointer();
+      while (true) {
+        while (curr->IsMarked()) {
+          HelpDeleting(pred, curr);
+          curr = curr->next_.LoadPointer();
+        }
+        if (pred->IsMarked()) {
+          break;
+        }
+        if (curr->key_ >= key) {
+          return {pred, curr};
+        }
+        pred = curr;
+        curr = pred->next_.LoadPointer();
+      }
+    }
+  }
+
+  bool HelpDeleting(Node* pred, Node* curr) const {
+    return pred->next_.CompareAndSet({curr, false},
+                                     {curr->next_.LoadPointer(), false});
   }
 
  private:
   BumpPointerAllocator& allocator_;
   Node* head_{nullptr};
+  tpcc::atomic<size_t> size_{0};
 };
 
 }  // namespace solutions

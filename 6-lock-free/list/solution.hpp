@@ -119,9 +119,6 @@ class LockFreeLinkedSet {
           HelpDeleting(pred, curr);
           curr = curr->next_.LoadPointer();
         }
-        if (pred->IsMarked()) {
-          break;
-        }
         if (curr->key_ >= key) {
           return {pred, curr};
         }
